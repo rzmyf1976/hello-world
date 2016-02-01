@@ -1,0 +1,66 @@
+function [Ctime,alpha,b,ite,Y_U_evaluate]=Q_first(X_L,Y_L,X_U,kernel_fct,sig2,C,C_star,gama,omaga_range,theta,Y_U)
+%quasi-optimal ls-s3vm using maximum descent strategy
+%X_L is an L*d matrix with each instance in its row. 
+comb_all={};
+for i=1:1:theta
+    comb_all{i,1}=combntns(1:omaga_range,i);
+end
+begin_clock=tic;
+[L,d]=size(X_L);
+[U,d]=size(X_U);
+N=L+U;
+
+K_all=kernel_matrix([X_L;X_U],kernel_fct,sig2);
+rhou=[(zeros(L,1)+1)./(C*gama(1:L));(zeros(U,1)+1)./(C_star*gama(L+1:end))];
+A=K_all+diag(rhou);
+A_inv=inv(A);
+B=ones(L+U,1);
+Q=B'*A_inv*B;
+Lambad=(A_inv-A_inv*B*B'*A_inv/Q)'*A_inv*(A_inv-A_inv*B*B'*A_inv/Q);
+        
+Lambad_UU=Lambad(L+1:end,L+1:end);
+Lambad_UL=Lambad(L+1:end,1:L);
+
+Y_U_cur=sign(-inv(Lambad_UU)*Lambad_UL*Y_L);
+zero_index=find(Y_U_cur==0);
+Y_U_cur(zero_index,1)=1;
+
+alpha_coef=A_inv-A_inv*B*B'*A_inv/Q;
+b_coef=B'*A_inv/Q;
+
+Y_change=1;
+ite=0;
+while Y_change
+    Y_change=0;
+    ite=ite+1;
+    alpha=alpha_coef*[Y_L;Y_U_cur];
+    P=Y_U_cur.*alpha(L+1:end,1);
+    [P_sort,P_index]=sort(P,'descend');
+    cur_obj_value=[Y_L;Y_U_cur]'*Lambad*[Y_L;Y_U_cur];
+    First_descent_Y_U=Y_U_cur;
+    for m=1:1:theta
+        comb=comb_all{m,1};
+        for i=1:1:size(comb,1)
+            Y_U_temp=Y_U_cur;
+            Y_U_temp(P_index(comb(i,:),1))=-Y_U_temp(P_index(comb(i,:),1));
+            Y=[Y_L;Y_U_temp];
+            obj_value=Y'*Lambad*Y;
+            if obj_value<cur_obj_value
+                First_descent_Y_U=Y_U_temp;
+                cur_obj_value=obj_value;
+                Y_change=1;
+                break;
+            end
+        end
+        if Y_change==1
+            break;
+        end
+    end
+    Y_U_cur=First_descent_Y_U;
+end
+alpha=alpha_coef*[Y_L;Y_U_cur];
+b=b_coef*[Y_L;Y_U_cur];
+Y_U_evaluate=Y_U_cur;
+
+Ctime=toc(begin_clock);
+end
